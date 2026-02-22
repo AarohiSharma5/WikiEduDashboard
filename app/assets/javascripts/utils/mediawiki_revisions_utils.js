@@ -51,19 +51,19 @@ export const fetchRevisionsFromUsers = async (course, users, days, last_date, fi
   const usernames = users.map(user => user.username);
   const registered_dates = users.map(user => user.registered_at);
 
-  // setting last_date to course end + 7 days if its present after that
+  // setting last_date to course end + 7 days if it's present after that
   const courseEndBuffer = addDays(toDate(course.end), 7);
   if (isAfter(toDate(last_date), courseEndBuffer)) {
     last_date = formatISO(courseEndBuffer);
   }
 
   let revisions = [];
-  const wikiPromises = [];
 
   // request until we find 50 revisions or the date is outside the course duration
   // the last we fetch is up until 5 years ago
   let keepRunning = true;
   while (revisions.length < 50 && keepRunning) {
+    const wikiPromises = [];
     for (const wiki of course.wikis) {
       wikiPromises.push(fetchRevisionsFromWiki(days, wiki, usernames, course.start, course.end, last_date));
     }
