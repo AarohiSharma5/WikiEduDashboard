@@ -6,7 +6,7 @@ import { stringify } from 'query-string';
 import request from './request';
 import { toWikiDomain } from './wiki_utils';
 import { toDate } from './date_utils';
-import { subDays, formatISO, subYears, isBefore } from 'date-fns';
+import { subDays, formatISO, subYears, isBefore, addDays, isAfter } from 'date-fns';
 
 // the MediaWiki API sends back revisions in pages
 // except the last page, each page has a continue token
@@ -51,6 +51,12 @@ export const fetchRevisionsFromUsers = async (course, users, days, last_date, fi
   const usernames = users.map(user => user.username);
   const registered_dates = users.map(user => user.registered_at);
 
+  // setting last_date to course end + 7 days if its present after that
+  const courseEndBuffer = addDays(toDate(course.end), 7);
+  if (isAfter(toDate(last_date), courseEndBuffer)) {
+    last_date = formatISO(courseEndBuffer);
+  }
+
   let revisions = [];
   const wikiPromises = [];
 
@@ -59,7 +65,7 @@ export const fetchRevisionsFromUsers = async (course, users, days, last_date, fi
   let keepRunning = true;
   while (revisions.length < 50 && keepRunning) {
     for (const wiki of course.wikis) {
-      wikiPromises.push(fetchRevisionsFromWiki(days, wiki, usernames, course.start, last_date));
+      wikiPromises.push(fetchRevisionsFromWiki(days, wiki, usernames, course.start, course.end, last_date));
     }
     const resolvedValues = await Promise.all(wikiPromises);
     for (const value of resolvedValues) {
@@ -96,9 +102,16 @@ export const fetchRevisionsFromUsers = async (course, users, days, last_date, fi
 // fetches revisions from a particular wiki
 // days is the time period to fetch for. For example, if it is 7 days, and the last_date
 // is today's date, it will look for revisions from the past week
-const fetchAllRevisions = async (API_URL, days, usernames, wiki, course_start, last_date) => {
+const fetchAllRevisions = async (API_URL, days, usernames, wiki, course_start, course_end, last_date) => {
   let ucend;
   let exitNext = false;
+
+  // Don't fetch revisions after course end + 7 days
+  const courseEndBuffer = addDays(toDate(course_end), 7);
+  if (isAfter(toDate(last_date), courseEndBuffer)) {
+    return { revisions: [], exitNext: true };
+  }
+
   if (isBefore(subDays(toDate(last_date), days), toDate(course_start))) {
     ucend = formatISO(toDate(course_start));
     exitNext = true;
@@ -134,10 +147,10 @@ const fetchAllRevisions = async (API_URL, days, usernames, wiki, course_start, l
 
 // wrapper function around fetchAllRevisions. This gets all the revisions returned by that function
 // adds some properties we require on the front end, like url, article_url, etc
-const fetchRevisionsFromWiki = async (days, wiki, usernames, course_start, last_date) => {
+const fetchRevisionsFromWiki = async (days, wiki, usernames, course_start, course_end, last_date) => {
   const prefix = `https://${toWikiDomain(wiki)}`;
   const API_URL = `${prefix}/w/api.php`;
-  const { revisions, exitNext } = await fetchAllRevisions(API_URL, days, usernames, wiki, course_start, last_date);
+  const { revisions, exitNext } = await fetchAllRevisions(API_URL, days, usernames, wiki, course_start, course_end, last_date);
   for (const revision of revisions) {
     revision.wiki = wiki;
     const diff_params = {
